@@ -5,6 +5,9 @@
   <title>YT Music Widget</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 
   <style>
     @property --angle {
@@ -20,6 +23,7 @@
     body {
       background: transparent;
       overflow: hidden;
+      font-family: "Press Start 2P", monospace;
     }
 
     /* BORDE CON GRADIENTE ANIMADO */
@@ -205,15 +209,16 @@
 
     /* TEXTO */
     #title {
-      font-size: 1.65rem;
-      font-weight: 800;
-      letter-spacing: -0.01em;
+      font-size: 1rem;
+      font-weight: normal;
+      line-height: 1.6;
     }
 
     #artist {
-      font-size: 1.05rem;
+      font-size: 0.7rem;
       color: rgba(255, 255, 255, 0.65);
-      margin-top: 2px;
+      margin-top: 8px;
+      line-height: 1.6;
     }
 
     /* PROGRESS BAR */
@@ -224,10 +229,9 @@
     #time-row {
       display: flex;
       justify-content: space-between;
-      margin-top: 6px;
-      font-size: 0.75rem;
+      margin-top: 10px;
+      font-size: 0.6rem;
       color: rgba(255, 255, 255, 0.55);
-      font-variant-numeric: tabular-nums;
     }
 
     .progress-bar {

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Twitch Chat Widget</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      background: transparent;
+      overflow: hidden;
+      font-family: "Press Start 2P", monospace;
+    }
+
+    #chat-container {
+      position: fixed;
+      bottom: 24px;
+      left: 24px;
+      width: 560px;
+      max-height: 680px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 8px;
+      overflow: hidden;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .msg {
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 0.65rem;
+      line-height: 1.8;
+      word-wrap: break-word;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+      animation: slideIn 0.35s ease forwards;
+    }
+
+    .msg.fade-out {
+      animation: fadeOut 0.45s ease forwards;
+    }
+
+    @keyframes slideIn {
+      from { transform: translateX(-30px); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    @keyframes fadeOut {
+      to { transform: translateX(-20px); opacity: 0; }
+    }
+
+    .msg .badge {
+      height: 18px;
+      width: 18px;
+      vertical-align: middle;
+      margin-right: 4px;
+      display: inline-block;
+    }
+
+    .msg .user {
+      font-weight: normal;
+      margin-right: 4px;
+    }
+
+    .msg .emote {
+      height: 24px;
+      vertical-align: middle;
+      margin: -4px 2px;
+      display: inline-block;
+    }
+
+    .msg.action {
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+<div id="chat-container"></div>
+
+<script>
+// ---- CONFIG ----
+const TWITCH_CHANNEL = "mralejojo";
+const MAX_MESSAGES = 8;
+const MESSAGE_LIFETIME_MS = 25000;
+const RECONNECT_DELAY_MS = 3000;
+
+const container = document.getElementById("chat-container");
+
+// Colores de respaldo para usuarios sin color propio en Twitch
+const FALLBACK_COLORS = [
+  "#ff5c8a", "#ffb454", "#7ee787", "#58c4ff",
+  "#c792ea", "#ff7b72", "#7dd3fc", "#f4b942"
+];
+
+function fallbackColor(username) {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = username.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return FALLBACK_COLORS[Math.abs(hash) % FALLBACK_COLORS.length];
+}
+
+// BADGES GLOBALES (mod/vip/broadcaster/etc.) - endpoint publico, sin Client-ID
+let globalBadges = {};
+
+fetch("https://badges.twitch.tv/v1/badges/global/display?language=es")
+  .then((res) => res.json())
+  .then((data) => {
+    globalBadges = data?.badge_sets || {};
+  })
+  .catch(() => {
+    globalBadges = {};
+  });
+
+// badges tag format: "name1/version1,name2/version2"
+function parseBadges(badgeString) {
+  if (!badgeString) return [];
+
+  const badges = [];
+
+  for (const part of badgeString.split(",")) {
+    const [name, version] = part.split("/");
+    if (!name) continue;
+
+    const set = globalBadges[name];
+    const info = set?.versions?.[version];
+    if (info) {
+      badges.push({ name, url: info.image_url_2x || info.image_url_1x, title: info.title });
+    }
+  }
+
+  return badges;
+}
+
+function parseTags(tagString) {
+  const tags = {};
+  if (!tagString) return tags;
+
+  for (const pair of tagString.split(";")) {
+    const idx = pair.indexOf("=");
+    if (idx === -1) continue;
+    tags[pair.slice(0, idx)] = pair.slice(idx + 1);
+  }
+
+  return tags;
+}
+
+// emotes tag format: "id:start-end,start-end/id2:start-end"
+function parseEmotes(emoteString) {
+  if (!emoteString) return [];
+
+  const emotes = [];
+
+  for (const part of emoteString.split("/")) {
+    const [id, ranges] = part.split(":");
+    if (!id || !ranges) continue;
+
+    for (const range of ranges.split(",")) {
+      const [start, end] = range.split("-").map(Number);
+      emotes.push({ id, start, end });
+    }
+  }
+
+  return emotes.sort((a, b) => a.start - b.start);
+}
+
+function buildMessageContent(text, emotes) {
+  const frag = document.createDocumentFragment();
+
+  if (emotes.length === 0) {
+    frag.appendChild(document.createTextNode(text));
+    return frag;
+  }
+
+  const chars = Array.from(text);
+  let cursor = 0;
+
+  for (const emote of emotes) {
+    if (emote.start > cursor) {
+      frag.appendChild(document.createTextNode(chars.slice(cursor, emote.start).join("")));
+    }
+
+    const img = document.createElement("img");
+    img.className = "emote";
+    img.src = `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`;
+    img.alt = chars.slice(emote.start, emote.end + 1).join("");
+    frag.appendChild(img);
+
+    cursor = emote.end + 1;
+  }
+
+  if (cursor < chars.length) {
+    frag.appendChild(document.createTextNode(chars.slice(cursor).join("")));
+  }
+
+  return frag;
+}
+
+function addMessage({ displayName, color, text, emotes, badges, isAction }) {
+  const msg = document.createElement("div");
+  msg.className = "msg" + (isAction ? " action" : "");
+
+  for (const badge of badges) {
+    const img = document.createElement("img");
+    img.className = "badge";
+    img.src = badge.url;
+    img.title = badge.title;
+    img.alt = badge.name;
+    msg.appendChild(img);
+  }
+
+  const user = document.createElement("span");
+  user.className = "user";
+  user.textContent = displayName + (isAction ? " " : ": ");
+  user.style.color = color;
+  msg.appendChild(user);
+
+  msg.appendChild(buildMessageContent(text, emotes));
+
+  container.appendChild(msg);
+
+  while (container.children.length > MAX_MESSAGES) {
+    container.firstElementChild.remove();
+  }
+
+  setTimeout(() => {
+    msg.classList.add("fade-out");
+    msg.addEventListener("animationend", () => msg.remove(), { once: true });
+  }, MESSAGE_LIFETIME_MS);
+}
+
+function handlePrivmsg(tags, rawText) {
+  let text = rawText;
+  let isAction = false;
+
+  const actionMatch = text.match(/^ACTION (.*)$/);
+  if (actionMatch) {
+    isAction = true;
+    text = actionMatch[1];
+  }
+
+  const displayName = tags["display-name"] || "anon";
+  const color = tags["color"] || fallbackColor(displayName.toLowerCase());
+  const emotes = parseEmotes(tags["emotes"]);
+  const badges = parseBadges(tags["badges"]);
+
+  addMessage({ displayName, color, text, emotes, badges, isAction });
+}
+
+function connect() {
+  const ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443");
+
+  ws.onopen = () => {
+    const anon = "justinfan" + Math.floor(Math.random() * 100000);
+    ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands twitch.tv/membership");
+    ws.send("PASS SCHMOOPIIE");
+    ws.send(`NICK ${anon}`);
+    ws.send(`JOIN #${TWITCH_CHANNEL.toLowerCase()}`);
+  };
+
+  ws.onmessage = (event) => {
+    for (const line of event.data.split("\r\n")) {
+      if (!line) continue;
+
+      if (line.startsWith("PING")) {
+        ws.send("PONG :tmi.twitch.tv");
+        continue;
+      }
+
+      let rest = line;
+      let tags = {};
+
+      if (rest.startsWith("@")) {
+        const spaceIdx = rest.indexOf(" ");
+        tags = parseTags(rest.slice(1, spaceIdx));
+        rest = rest.slice(spaceIdx + 1);
+      }
+
+      const privmsgMatch = rest.match(/^:\S+ PRIVMSG #\S+ :(.*)$/);
+      if (privmsgMatch) {
+        handlePrivmsg(tags, privmsgMatch[1]);
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    setTimeout(connect, RECONNECT_DELAY_MS);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+connect();
+</script>
+
+</body>
+</html>
