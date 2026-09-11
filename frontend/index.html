@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>YT Music Widget</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @property --angle {
+      syntax: '<angle>';
+      inherits: false;
+      initial-value: 0deg;
+    }
+
+    :root {
+      --accent: rgb(255, 0, 51);
+    }
+
+    body {
+      background: transparent;
+      overflow: hidden;
+    }
+
+    /* BORDE CON GRADIENTE ANIMADO */
+    #border-wrap {
+      position: relative;
+      width: 480px;
+      padding: 3px;
+      border-radius: 1.8rem;
+      background: conic-gradient(from var(--angle), var(--accent), #ffffff22 30%, var(--accent) 55%, #ffffff22 80%, var(--accent));
+      animation: rotateBorder 4s linear infinite;
+      transition: background 0.6s ease, opacity 0.5s ease, transform 0.5s ease;
+      transform: translateY(0) scale(1);
+      opacity: 1;
+    }
+
+    @keyframes rotateBorder {
+      to { --angle: 360deg; }
+    }
+
+    #border-wrap.animate-in {
+      transform: translateY(20px) scale(1);
+      opacity: 0;
+    }
+
+    /* Widget completo se oculta cuando no hay musica sonando */
+    #border-wrap.idle {
+      opacity: 0;
+      transform: translateY(10px) scale(0.94);
+      pointer-events: none;
+    }
+
+    #widget {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 1.35rem;
+      padding: 1.4rem 1.9rem;
+      border-radius: 1.6rem;
+      background: rgba(8, 8, 12, 0.78);
+      backdrop-filter: blur(22px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+      transition: all 0.4s ease;
+    }
+
+    /* GLOW PULSANTE */
+    #widget::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 1.6rem;
+      background: radial-gradient(circle at 15% 50%, var(--accent), transparent 70%);
+      opacity: 0.3;
+      filter: blur(45px);
+      z-index: 0;
+      transition: background 0.6s ease;
+      animation: pulseGlow 2.2s ease-in-out infinite;
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.28; }
+      50% { opacity: 0.55; }
+    }
+
+    #widget > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* COVER / VINILO */
+    #cover-wrap {
+      position: relative;
+      width: 94px;
+      height: 94px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 4px rgba(255, 255, 255, 0.1),
+        0 10px 28px rgba(0, 0, 0, 0.55);
+    }
+
+    #icon-wrap {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #cover {
+      display: none;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      animation: spin 9s linear infinite;
+      animation-play-state: paused;
+    }
+
+    #cover.loaded {
+      display: block;
+    }
+
+    #cover.loaded + #icon-wrap {
+      display: none;
+    }
+
+    #widget.is-playing #cover {
+      animation-play-state: running;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Surcos sutiles de vinilo sobre la caratula */
+    #cover-wrap::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: repeating-radial-gradient(circle, transparent 0 7%, rgba(0, 0, 0, 0.18) 7.4%, transparent 8%);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #cover-wrap .hole {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 11px;
+      height: 11px;
+      background: #0a0a0a;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+      z-index: 3;
+    }
+
+    /* ECUALIZADOR (badge sobre la caratula) */
+    #eq-badge {
+      position: absolute;
+      bottom: -3px;
+      right: -3px;
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: rgba(10, 10, 12, 0.9);
+      box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2.5px;
+      z-index: 4;
+    }
+
+    #eq-badge span {
+      width: 3px;
+      height: 35%;
+      background: var(--accent);
+      border-radius: 2px;
+      animation: eqBounce 0.9s ease-in-out infinite;
+      animation-play-state: paused;
+      transform-origin: bottom;
+    }
+
+    #widget.is-playing #eq-badge span {
+      animation-play-state: running;
+    }
+
+    #eq-badge span:nth-child(1) { animation-delay: 0s; }
+    #eq-badge span:nth-child(2) { animation-delay: 0.2s; }
+    #eq-badge span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes eqBounce {
+      0%, 60%, 100% { transform: scaleY(0.35); }
+      30% { transform: scaleY(1); }
+    }
+
+    /* TEXTO */
+    #title {
+      font-size: 1.65rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+
+    #artist {
+      font-size: 1.05rem;
+      color: rgba(255, 255, 255, 0.65);
+      margin-top: 2px;
+    }
+
+    /* PROGRESS BAR */
+    .progress-track {
+      height: 6px;
+    }
+
+    #time-row {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.55);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .progress-bar {
+      height: 6px;
+      width: 0;
+      border-radius: 999px;
+      transition: width 0.1s linear;
+
+      background: linear-gradient(90deg, var(--accent), white);
+
+      box-shadow:
+        0 0 10px var(--accent),
+        0 0 20px var(--accent),
+        0 0 30px var(--accent);
+    }
+
+    /* SCROLL TEXTO */
+    @keyframes scrollText {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .marquee {
+      display: inline-block;
+      padding-right: 50px;
+      animation: scrollText 12s linear infinite alternate;
+      animation-delay: 2s;
+    }
+  </style>
+</head>
+<body>
+
+<div id="border-wrap">
+  <div id="widget" class="text-white">
+
+    <!-- Cover / vinilo -->
+    <div id="cover-wrap">
+      <img id="cover" />
+      <div id="icon-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--accent)" class="w-9 h-9">
+          <path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zM9.6 16.8V7.2l7.2 4.8-7.2 4.8z"/>
+        </svg>
+      </div>
+      <span class="hole"></span>
+      <div id="eq-badge">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="flex flex-col flex-1 overflow-hidden">
+
+      <div class="overflow-hidden w-full">
+        <p id="title" class="whitespace-nowrap"></p>
+      </div>
+
+      <div class="overflow-hidden w-full">
+        <p id="artist" class="whitespace-nowrap"></p>
+      </div>
+
+      <div class="w-full bg-white/10 mt-3 rounded-full overflow-hidden progress-track">
+        <div id="progress" class="progress-bar"></div>
+      </div>
+
+      <div id="time-row">
+        <span id="time-current">0:00</span>
+        <span id="time-duration">0:00</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = "http://localhost:3000/now-playing";
+
+const borderWrap = document.getElementById("border-wrap");
+const widget = document.getElementById("widget");
+const cover = document.getElementById("cover");
+const title = document.getElementById("title");
+const artist = document.getElementById("artist");
+const progress = document.getElementById("progress");
+const timeCurrent = document.getElementById("time-current");
+const timeDuration = document.getElementById("time-duration");
+
+let lastTrack = null;
+let lastImage = null;
+let progressInterval = null;
+
+// COLOR DINAMICO
+function extractColor(imgUrl) {
+  const img = new Image();
+  img.src = imgUrl;
+
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    ctx.drawImage(img, 0, 0);
+
+    const data = ctx.getImageData(0, 0, 1, 1).data;
+    const color = `rgb(${data[0]}, ${data[1]}, ${data[2]})`;
+
+    document.documentElement.style.setProperty("--accent", color);
+  };
+}
+
+// TIEMPO
+function formatTime(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// PROGRESS
+function startProgress(duration, progressMs) {
+  clearInterval(progressInterval);
+
+  const startTime = Date.now();
+  timeDuration.textContent = formatTime(duration);
+
+  function update() {
+    const now = Date.now();
+    const elapsed = now - startTime;
+
+    const currentProgress = Math.min(progressMs + elapsed, duration);
+    const percent = Math.min((currentProgress / duration) * 100, 100);
+
+    progress.style.width = percent + "%";
+    timeCurrent.textContent = formatTime(currentProgress);
+
+    if (percent >= 100) {
+      clearInterval(progressInterval);
+    }
+  }
+
+  update();
+  progressInterval = setInterval(update, 200);
+}
+
+// MARQUEE
+function applyMarquee(el) {
+  const parent = el.parentElement;
+
+  el.classList.remove("marquee");
+
+  if (el.scrollWidth > parent.clientWidth) {
+    el.classList.add("marquee");
+  }
+}
+
+// UPDATE
+async function update() {
+  try {
+    const res = await fetch(API_URL);
+    const data = await res.json();
+
+    if (!data.playing) {
+      borderWrap.classList.add("idle");
+      progress.style.width = "0%";
+      timeCurrent.textContent = "0:00";
+      timeDuration.textContent = "0:00";
+      cover.classList.remove("loaded");
+      widget.classList.remove("is-playing");
+      lastTrack = null;
+      lastImage = null;
+      clearInterval(progressInterval);
+      return;
+    }
+
+    borderWrap.classList.remove("idle");
+    widget.classList.add("is-playing");
+
+    const currentTrack = data.title + data.artist;
+
+    if (currentTrack !== lastTrack) {
+      lastTrack = currentTrack;
+      lastImage = null;
+      cover.classList.remove("loaded");
+
+      borderWrap.classList.add("animate-in");
+
+      setTimeout(() => {
+        title.textContent = data.title;
+        artist.textContent = data.artist || "";
+
+        if (data.duration && data.progress != null) {
+          startProgress(data.duration, data.progress);
+        }
+
+        borderWrap.classList.remove("animate-in");
+
+        setTimeout(() => {
+          applyMarquee(title);
+          applyMarquee(artist);
+        }, 100);
+
+      }, 200);
+    } else if (data.duration && data.progress != null) {
+      // Resincroniza el progreso en cada poll para no perder precision
+      startProgress(data.duration, data.progress);
+    }
+
+    // La caratula puede llegar en un poll posterior (el backend la busca
+    // de forma asincronica cuando detecta un track nuevo)
+    if (data.image && data.image !== lastImage) {
+      lastImage = data.image;
+      cover.src = data.image;
+      cover.classList.add("loaded");
+      extractColor(data.image);
+    }
+
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+setInterval(update, 1000);
+update();
+</script>
+
+</body>
+</html>
