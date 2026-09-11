@@ -7,6 +7,13 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SmtcReader</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Self-contained: el .exe publicado incluye su propio runtime, asi
+         no depende de que la PC tenga instalado el .NET 8 runtime. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
 </Project>
